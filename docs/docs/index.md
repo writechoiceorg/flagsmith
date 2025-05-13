@@ -38,7 +38,7 @@ import CardFooter from '@site/src/components/Card/CardFooter';
         </ul>
       </CardBody>
       <CardFooter>
-        <a className="button button--primary button--sm" href="/quickstart" text-align: center>
+        <a className="button button--primary button--sm" href="/quickstart">
           Start Integration
         </a>
       </CardFooter>
