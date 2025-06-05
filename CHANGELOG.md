@@ -1,5 +1,52 @@
 # Changelog
 
+## [2.182.0](https://github.com/Flagsmith/flagsmith/compare/v2.181.0...v2.182.0) (2025-06-04)
+
+
+### Features
+
+* track welcome page tasks and integrations ([#5500](https://github.com/Flagsmith/flagsmith/issues/5500)) ([e8b2738](https://github.com/Flagsmith/flagsmith/commit/e8b2738597c1e2ce7a7fdef6659ef288acb086ed))
+
+
+### Bug Fixes
+
+* **launch-darkly-importer:** Seconds `X-Ratelimit-Reset` timestamps are expected for rate limited requests ([#5536](https://github.com/Flagsmith/flagsmith/issues/5536)) ([0c84a42](https://github.com/Flagsmith/flagsmith/commit/0c84a428b979dfe56cf2c5315ef06bc0f8e46d6c))
+
+## [2.181.0](https://github.com/Flagsmith/flagsmith/compare/v2.180.0...v2.181.0) (2025-06-04)
+
+
+### Features
+
+* welcome page ([#5426](https://github.com/Flagsmith/flagsmith/issues/5426)) ([562cf08](https://github.com/Flagsmith/flagsmith/commit/562cf0853bdfc4d088d67eb45ca70bfdc885593e))
+
+
+### Bug Fixes
+
+* Adjust flagsmith client url ([#5525](https://github.com/Flagsmith/flagsmith/issues/5525)) ([0c43c32](https://github.com/Flagsmith/flagsmith/commit/0c43c32f8f77c87881220736833a7b51d2239ff3))
+* identities endpoint does not respect deleted segment overrides in versioned environments ([#5449](https://github.com/Flagsmith/flagsmith/issues/5449)) ([4f46d12](https://github.com/Flagsmith/flagsmith/commit/4f46d1201987908308799c503ad4cfc60f02cc65))
+* **launch-darkly-importer:** Rate limit responses with no retry information not expected ([#5529](https://github.com/Flagsmith/flagsmith/issues/5529)) ([bd2e7d6](https://github.com/Flagsmith/flagsmith/commit/bd2e7d6bfd077092c581933090e55e8f03d4a19c))
+
+## [2.180.0](https://github.com/Flagsmith/flagsmith/compare/v2.179.0...v2.180.0) (2025-06-03)
+
+
+### Features
+
+* **launch-darkly-importer:** Support large segments import, other improvements ([#5519](https://github.com/Flagsmith/flagsmith/issues/5519)) ([9c50468](https://github.com/Flagsmith/flagsmith/commit/9c50468fa36dee945aa95c5478bb0041423fc837))
+
+
+### Bug Fixes
+
+* hide-billing-periods-if-subscription-has-no-periods - 🔴 Blocked by [#5474](https://github.com/Flagsmith/flagsmith/issues/5474) ([#5479](https://github.com/Flagsmith/flagsmith/issues/5479)) ([f28522a](https://github.com/Flagsmith/flagsmith/commit/f28522ad32e951c3101841f2e7909745f4f94607))
+* hide-dropdown-caret-if-no-text-content ([#5517](https://github.com/Flagsmith/flagsmith/issues/5517)) ([aec2e2c](https://github.com/Flagsmith/flagsmith/commit/aec2e2c808187f75ba9aa679f44448c312e952ca))
+* Improve audit logs when postponing a scheduled Change Request ([#5484](https://github.com/Flagsmith/flagsmith/issues/5484)) ([c6d2ce9](https://github.com/Flagsmith/flagsmith/commit/c6d2ce957987e9cbfbe9d751afb984ce7713421a))
+* raise-404-if-org-does-not-have-billing-periods ([#5480](https://github.com/Flagsmith/flagsmith/issues/5480)) ([604e5e1](https://github.com/Flagsmith/flagsmith/commit/604e5e1762a807c0417ffac38f987e6d38f5193a))
+* updated-prevent-signups-and-invitation-doc ([#5508](https://github.com/Flagsmith/flagsmith/issues/5508)) ([e0f91bd](https://github.com/Flagsmith/flagsmith/commit/e0f91bd4c511752ff2ffb6e49b04198dedd97d9d))
+
+
+### Dependency Updates
+
+* bump split testing from 0.2.0 to 0.2.1 ([#5510](https://github.com/Flagsmith/flagsmith/issues/5510)) ([e2dbff2](https://github.com/Flagsmith/flagsmith/commit/e2dbff2d22db9c14c71886572e6c0022d80f23d5))
+
 ## [2.179.0](https://github.com/Flagsmith/flagsmith/compare/v2.178.0...v2.179.0) (2025-05-30)
 
 
