@@ -620,10 +620,10 @@ def test_commit_change_request_publishes_environment_feature_versions(  # type: 
     change_request.environment_feature_versions.add(environment_feature_version)
 
     mock_rebuild_environment_document_task = mocker.patch(
-        "features.workflows.core.models.rebuild_environment_document"
+        "core.workflows_services.rebuild_environment_document"
     )
     mock_trigger_update_version_webhooks = mocker.patch(
-        "features.workflows.core.models.trigger_update_version_webhooks"
+        "core.workflows_services.trigger_update_version_webhooks"
     )
 
     # When
@@ -744,26 +744,6 @@ def test_committing_change_request_with_environment_feature_versions_creates_pub
     ).exists()
 
 
-def test_retrieving_segments(
-    change_request: ChangeRequest,
-) -> None:
-    # Given
-    base_segment = Segment.objects.create(
-        name="Base Segment",
-        description="Segment description",
-        project=change_request.environment.project,  # type: ignore[union-attr]
-    )
-
-    # When
-    segment = base_segment.shallow_clone(
-        name="New Name", description="New description", change_request=change_request
-    )
-
-    # Then
-    assert change_request.segments.count() == 1
-    assert change_request.segments.first() == segment
-
-
 def test_change_request_live_from_for_change_request_with_change_set(
     feature: Feature,
     environment_v2_versioning: Environment,
@@ -807,34 +787,49 @@ def test_publishing_segments_as_part_of_commit(
     admin_user: FFAdminUser,
 ) -> None:
     # Given
-    assert segment.version == 2
-    cr_segment = segment.shallow_clone("Test Name", "Test Description", change_request)
-    assert cr_segment.rules.count() == 0
-
-    # Add some rules that the original segment will be cloning from
-    parent_rule = SegmentRule.objects.create(
-        segment=cr_segment, type=SegmentRule.ALL_RULE
+    original_version: int = segment.version  # type: ignore[assignment]
+    draft_segment = Segment.objects.create(
+        name="new-name",
+        description="new-description",
+        change_request=change_request,
+        project=segment.project,
+        version_of=segment,
     )
-
-    child_rule1 = SegmentRule.objects.create(
-        rule=parent_rule, type=SegmentRule.ANY_RULE
-    )
-    child_rule2 = SegmentRule.objects.create(
-        rule=parent_rule, type=SegmentRule.NONE_RULE
+    new_rule1 = SegmentRule.objects.create(
+        segment=draft_segment,
+        type=SegmentRule.ALL_RULE,
     )
     Condition.objects.create(
-        rule=child_rule1,
-        property="child_rule1",
+        rule=new_rule1,
+        property="property1a",
         operator=EQUAL,
-        value="condition1",
-        created_with_segment=True,
+        value="value1a",
     )
     Condition.objects.create(
-        rule=child_rule2,
-        property="child_rule2",
-        operator=PERCENTAGE_SPLIT,
-        value="0.2",
-        created_with_segment=False,
+        rule=new_rule1,
+        property="property1b",
+        operator=EQUAL,
+        value="value1b",
+    )
+    new_rule2 = SegmentRule.objects.create(
+        segment=draft_segment,
+        type=SegmentRule.ANY_RULE,
+    )
+    Condition.objects.create(
+        rule=new_rule2,
+        property="property2a",
+        operator=EQUAL,
+        value="value2a",
+    )
+    new_rule3 = SegmentRule.objects.create(
+        rule=new_rule2,
+        type=SegmentRule.ALL_RULE,
+    )
+    Condition.objects.create(
+        rule=new_rule3,
+        property="property3a",
+        operator=EQUAL,
+        value="value3a",
     )
 
     # When
@@ -842,22 +837,36 @@ def test_publishing_segments_as_part_of_commit(
 
     # Then
     segment.refresh_from_db()
-    assert segment.version == 3
-    assert segment.name == "Test Name"
-    assert segment.description == "Test Description"
-    assert segment.rules.count() == 1
-    parent_rule2 = segment.rules.first()
-    assert parent_rule2.type == SegmentRule.ALL_RULE  # type: ignore[union-attr]
-    assert parent_rule2.rules.count() == 2  # type: ignore[union-attr]
-    child_rule3, child_rule4 = list(parent_rule2.rules.all())  # type: ignore[union-attr]
-    assert child_rule3.type == SegmentRule.ANY_RULE
-    assert child_rule4.type == SegmentRule.NONE_RULE
-    assert child_rule3.conditions.count() == 1
-    assert child_rule4.conditions.count() == 1
-    condition1 = child_rule3.conditions.first()
-    condition2 = child_rule4.conditions.first()
-    assert condition1.value == "condition1"
-    assert condition2.value == "0.2"
+    assert segment.version == original_version + 1
+    assert list(
+        SegmentRule.objects.filter(segment=segment)
+        .values("rule", "type")
+        .order_by("type")
+    ) == [
+        {"rule": None, "type": SegmentRule.ALL_RULE},
+        {"rule": None, "type": SegmentRule.ANY_RULE},
+    ]
+    assert list(
+        Condition.objects.filter(rule__segment=segment)
+        .values("property", "operator", "value")
+        .order_by("property")
+    ) == [
+        {"property": "property1a", "operator": EQUAL, "value": "value1a"},
+        {"property": "property1b", "operator": EQUAL, "value": "value1b"},
+        {"property": "property2a", "operator": EQUAL, "value": "value2a"},
+    ]
+    assert list(
+        SegmentRule.objects.filter(rule__segment=segment).values("rule__type", "type")
+    ) == [
+        {"rule__type": SegmentRule.ANY_RULE, "type": SegmentRule.ALL_RULE},
+    ]
+    assert list(
+        Condition.objects.filter(rule__rule__segment=segment).values(
+            "property", "operator", "value"
+        )
+    ) == [
+        {"property": "property3a", "operator": EQUAL, "value": "value3a"},
+    ]
 
 
 def test_ignore_conflicts_for_multiple_scheduled_change_requests(
@@ -984,7 +993,7 @@ def test_approval_via_project(project_change_request: ChangeRequest) -> None:
     assert project_change_request.project.minimum_change_request_approvals is None
 
     # When
-    is_approved = project_change_request.is_approved()  # type: ignore[no-untyped-call]
+    is_approved = project_change_request.is_approved()
 
     # Then
     assert is_approved is True

@@ -1,13 +1,9 @@
 import json
-from unittest import mock
 
 import pytest
 from common.environments.permissions import (
     TAG_SUPPORTED_PERMISSIONS,
     VIEW_ENVIRONMENT,
-)
-from common.projects.permissions import (
-    CREATE_ENVIRONMENT,
 )
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
@@ -30,7 +26,8 @@ from features.models import Feature, FeatureState
 from features.versioning.models import EnvironmentFeatureVersion
 from metadata.models import Metadata, MetadataModelField
 from organisations.models import Organisation
-from projects.models import Project
+from permissions.models import PermissionModel
+from projects.models import Project, UserProjectPermission
 from segments.models import Condition, Segment, SegmentRule
 from tests.types import WithEnvironmentPermissionsCallable
 from users.models import FFAdminUser
@@ -132,20 +129,20 @@ def test_user_with_view_environment_permission_can_retrieve_environment(
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_can_clone_environment_with_create_environment_permission(  # type: ignore[no-untyped-def]
-    test_user,
-    test_user_client,
-    environment,
-    user_project_permission,
+def test_can_clone_environment_with_create_environment_permission(
+    staff_client: APIClient,
+    environment: Environment,
+    user_project_permission: UserProjectPermission,
+    create_environment_permission: PermissionModel,
 ) -> None:
     # Given
     env_name = "Cloned env"
-    user_project_permission.permissions.add(CREATE_ENVIRONMENT)
+    user_project_permission.permissions.add(create_environment_permission)
 
     url = reverse("api-v1:environments:environment-clone", args=[environment.api_key])
 
     # When
-    response = test_user_client.post(url, {"name": env_name})
+    response = staff_client.post(url, {"name": env_name})
 
     # Then
     assert response.status_code == status.HTTP_200_OK
@@ -510,32 +507,6 @@ def test_cannot_delete_webhooks_for_environment_user_does_not_belong_to(
     # Then
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert Webhook.objects.filter(id=webhook.id).exists()
-
-
-@mock.patch("webhooks.mixins.trigger_sample_webhook")
-def test_trigger_sample_webhook_calls_trigger_sample_webhook_method_with_correct_arguments(
-    trigger_sample_webhook_mock: mock.MagicMock,
-    environment: Environment,
-    admin_client: APIClient,
-) -> None:
-    # Given
-    valid_webhook_url = "http://my.webhook.com/webhooks"
-    mocked_response = mock.MagicMock(status_code=200)
-    trigger_sample_webhook_mock.return_value = mocked_response
-    url = reverse(
-        "api-v1:environments:environment-webhooks-trigger-sample-webhook",
-        args=[environment.api_key],
-    )
-    data = {"url": valid_webhook_url}
-
-    # When
-    response = admin_client.post(url, data)
-
-    # Then
-    assert response.json()["message"] == "Request returned 200"
-    assert response.status_code == status.HTTP_200_OK
-    args, _ = trigger_sample_webhook_mock.call_args
-    assert args[0].url == valid_webhook_url
 
 
 def test_list_api_keys(
@@ -935,14 +906,12 @@ def test_update_environment_metadata(  # type: ignore[no-untyped-def]
     # Then
     assert response.status_code == status.HTTP_200_OK
     assert len(response.json()["metadata"]) == 1
-
-    # value for metadata field a was updated
-    assert response.json()["metadata"][0]["field_value"] == str(updated_field_value)
-    environment_metadata_a.refresh_from_db()
-    environment_metadata_a.field_value = str(updated_field_value)
-
-    # and environment_metadata_b does not exists
-    assert Metadata.objects.filter(id=environment_metadata_b.id).exists() is False
+    assert list(environment.metadata.values("model_field_id", "field_value")) == [
+        {
+            "model_field_id": environment_metadata_a.model_field.id,
+            "field_value": str(updated_field_value),
+        }
+    ]
 
 
 def test_audit_log_entry_created_when_environment_updated(

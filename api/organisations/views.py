@@ -22,9 +22,6 @@ from app_analytics.influxdb_wrapper import (
     get_multiple_event_list_for_organisation,
 )
 from core.helpers import get_current_site_url
-from integrations.lead_tracking.hubspot.services import (
-    register_hubspot_tracker,
-)
 from organisations.chargebee import webhook_event_types, webhook_handlers
 from organisations.exceptions import OrganisationHasNoPaidSubscription
 from organisations.models import (
@@ -59,7 +56,6 @@ from permissions.serializers import (
 from projects.serializers import ProjectListSerializer
 from users.models import FFAdminUser
 from users.serializers import UserIdSerializer
-from webhooks.mixins import TriggerSampleWebhookMixin
 from webhooks.webhooks import WebhookType
 
 from .serializers import OrganisationAPIUsageNotificationSerializer
@@ -115,7 +111,6 @@ class OrganisationViewSet(viewsets.ModelViewSet):  # type: ignore[type-arg]
         Override create method to add new organisation to authenticated user
         """
 
-        register_hubspot_tracker(request)
         user = request.user
         serializer = OrganisationSerializerFull(data=request.data)
         if serializer.is_valid():
@@ -335,11 +330,11 @@ def chargebee_webhook(request: Request) -> Response:
     return webhook_handlers.process_subscription(request)
 
 
-class OrganisationWebhookViewSet(viewsets.ModelViewSet, TriggerSampleWebhookMixin):  # type: ignore[type-arg]
+class OrganisationWebhookViewSet(viewsets.ModelViewSet):  # type: ignore[type-arg]
     serializer_class = OrganisationWebhookSerializer
     permission_classes = [IsAuthenticated, NestedOrganisationEntityPermission]
 
-    webhook_type = WebhookType.ORGANISATION  # type: ignore[assignment]
+    webhook_type = WebhookType.ORGANISATION
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
         if getattr(self, "swagger_fake_view", False):

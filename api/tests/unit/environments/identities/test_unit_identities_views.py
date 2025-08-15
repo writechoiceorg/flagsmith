@@ -17,7 +17,11 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.test import APIClient
 
-from core.constants import FLAGSMITH_UPDATED_AT_HEADER, STRING
+from core.constants import (
+    FLAGSMITH_UPDATED_AT_HEADER,
+    SDK_ENVIRONMENT_KEY_HEADER,
+    STRING,
+)
 from environments.identities.helpers import (
     get_hashed_percentage_for_object_ids,
 )
@@ -25,11 +29,13 @@ from environments.identities.models import Identity
 from environments.identities.traits.models import Trait
 from environments.identities.views import IdentityViewSet
 from environments.models import Environment, EnvironmentAPIKey
+from environments.permissions.models import UserEnvironmentPermission
 from environments.permissions.permissions import NestedEnvironmentPermissions
 from features.models import Feature, FeatureSegment, FeatureState
 from integrations.amplitude.models import AmplitudeConfiguration
 from organisations.models import Organisation
-from projects.models import Project
+from permissions.models import PermissionModel
+from projects.models import Project, UserProjectPermission
 from segments.models import Condition, Segment, SegmentRule
 
 
@@ -338,6 +344,54 @@ def test_identities_endpoint_returns_all_feature_states_for_identity_if_feature_
     assert len(response.data["flags"]) == 2
 
 
+def test_get_flags_for_identities_with_cache(
+    environment: Environment,
+    feature: Feature,
+    django_assert_num_queries: DjangoAssertNumQueries,
+    use_local_mem_cache_for_cache_middleware: None,
+    project_two_feature: Feature,
+    project_two_environment: Environment,
+) -> None:
+    # Given
+    base_url = reverse("api-v1:sdk-identities")
+    url = base_url + "?identifier=some-identifier"
+
+    # Create clients for two separate environments
+    environment_one_client = APIClient(
+        headers={SDK_ENVIRONMENT_KEY_HEADER: environment.api_key}
+    )
+    project_two_environment_client = APIClient(
+        headers={SDK_ENVIRONMENT_KEY_HEADER: project_two_environment.api_key}
+    )
+
+    # Fetch flags for both environments once to warm the cache
+    environment_one_response = environment_one_client.get(url)
+    assert environment_one_response.status_code == status.HTTP_200_OK
+
+    project_two_environment_response = project_two_environment_client.get(url)
+    assert project_two_environment_response.status_code == status.HTTP_200_OK
+
+    #  When
+    with django_assert_num_queries(0):
+        for _ in range(10):
+            environment_one_response = environment_one_client.get(url)
+            assert environment_one_response.status_code == status.HTTP_200_OK
+
+            project_two_environment_response = project_two_environment_client.get(url)
+            assert project_two_environment_response.status_code == status.HTTP_200_OK
+
+            # Then
+            # Each response must return the correct feature for its environment
+            assert (
+                environment_one_response.json()["flags"][0]["feature"]["id"]
+                == feature.id
+            )
+            assert (
+                project_two_environment_response.json()["flags"][0]["feature"]["id"]
+                == project_two_feature.id
+            )
+
+
 @mock.patch("integrations.amplitude.amplitude.AmplitudeWrapper.identify_user_async")
 def test_identities_endpoint_get_all_feature_amplitude_called(
     mock_amplitude_wrapper: mock.MagicMock,
@@ -549,7 +603,9 @@ def test_identities_endpoint_returns_value_for_segment_if_rule_type_percentage_s
     )
     Condition.objects.create(
         operator=PERCENTAGE_SPLIT,
-        value=(identity_percentage_value + (1 - identity_percentage_value) / 2) * 100.0,
+        value=int(
+            (identity_percentage_value + (1 - identity_percentage_value) / 2) * 100.0
+        ),
         rule=segment_rule,
     )
     feature_segment = FeatureSegment.objects.create(
@@ -600,7 +656,7 @@ def test_identities_endpoint_returns_default_value_if_rule_type_percentage_split
     )
     Condition.objects.create(
         operator=PERCENTAGE_SPLIT,
-        value=identity_percentage_value / 2,
+        value=int(identity_percentage_value / 2),
         rule=segment_rule,
     )
     feature_segment = FeatureSegment.objects.create(
@@ -1279,16 +1335,16 @@ def test_post_identities__transient_traits__no_persistence(
     assert not Trait.objects.filter(trait_key=transient_trait_key).exists()
 
 
-def test_user_with_view_identities_permission_can_retrieve_identity(  # type: ignore[no-untyped-def]
-    environment,
-    identity,
-    test_user_client,
-    view_environment_permission,
-    view_identities_permission,
-    view_project_permission,
-    user_environment_permission,
-    user_project_permission,
-):
+def test_user_with_view_identities_permission_can_retrieve_identity(
+    environment: Environment,
+    identity: Identity,
+    staff_client: APIClient,
+    view_environment_permission: PermissionModel,
+    view_identities_permission: PermissionModel,
+    view_project_permission: PermissionModel,
+    user_environment_permission: UserEnvironmentPermission,
+    user_project_permission: UserProjectPermission,
+) -> None:
     # Given
 
     user_environment_permission.permissions.add(
@@ -1302,22 +1358,22 @@ def test_user_with_view_identities_permission_can_retrieve_identity(  # type: ig
     )
 
     # When
-    response = test_user_client.get(url)
+    response = staff_client.get(url)
 
     # Then
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_user_with_view_environment_permission_can_not_list_identities(  # type: ignore[no-untyped-def]
-    environment,
-    identity,
-    test_user_client,
-    view_environment_permission,
-    manage_identities_permission,
-    view_project_permission,
-    user_environment_permission,
-    user_project_permission,
-):
+def test_user_with_view_environment_permission_can_not_list_identities(
+    environment: Environment,
+    identity: Identity,
+    staff_client: APIClient,
+    view_environment_permission: PermissionModel,
+    manage_identities_permission: PermissionModel,
+    view_project_permission: PermissionModel,
+    user_environment_permission: UserEnvironmentPermission,
+    user_project_permission: UserProjectPermission,
+) -> None:
     # Given
 
     user_environment_permission.permissions.add(view_environment_permission)
@@ -1329,7 +1385,7 @@ def test_user_with_view_environment_permission_can_not_list_identities(  # type:
     )
 
     # When
-    response = test_user_client.get(url)
+    response = staff_client.get(url)
 
     # Then
     assert response.status_code == status.HTTP_403_FORBIDDEN

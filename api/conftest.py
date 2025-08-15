@@ -9,15 +9,18 @@ import pytest
 from common.environments.permissions import (
     MANAGE_IDENTITIES,
     MANAGE_SEGMENT_OVERRIDES,
+    UPDATE_FEATURE_STATE,
     VIEW_ENVIRONMENT,
     VIEW_IDENTITIES,
 )
-from common.projects.permissions import VIEW_PROJECT
+from common.projects.permissions import CREATE_ENVIRONMENT, DELETE_FEATURE, VIEW_PROJECT
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import caches
 from django.db.backends.base.creation import TEST_DATABASE_PREFIX
 from django.test.utils import setup_databases
 from flag_engine.segments.constants import EQUAL
+from flagsmith import Flagsmith
+from flagsmith.models import Flags
 from moto import mock_dynamodb  # type: ignore[import-untyped]
 from mypy_boto3_dynamodb.service_resource import DynamoDBServiceResource, Table
 from pyfakefs.fake_filesystem import FakeFilesystem
@@ -25,7 +28,6 @@ from pytest import FixtureRequest
 from pytest_django.fixtures import SettingsWrapper
 from pytest_django.plugin import blocking_manager_key
 from pytest_mock import MockerFixture
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 from task_processor.task_run_method import TaskRunMethod
 from urllib3 import BaseHTTPResponse
@@ -82,6 +84,7 @@ from segments.models import Condition, Segment, SegmentRule
 from tests.test_helpers import fix_issue_3869
 from tests.types import (
     AdminClientAuthType,
+    EnableFeaturesFixture,
     WithEnvironmentPermissionsCallable,
     WithOrganisationPermissionsCallable,
     WithProjectPermissionsCallable,
@@ -214,16 +217,6 @@ trait_value = "value1"
 
 
 @pytest.fixture()
-def test_user(django_user_model):  # type: ignore[no-untyped-def]
-    return django_user_model.objects.create(email="user@example.com")
-
-
-@pytest.fixture()
-def auth_token(test_user):  # type: ignore[no-untyped-def]
-    return Token.objects.create(user=test_user)
-
-
-@pytest.fixture()
 def admin_client_original(admin_user):  # type: ignore[no-untyped-def]
     client = APIClient()
     client.force_authenticate(user=admin_user)
@@ -248,12 +241,6 @@ def admin_client(admin_client_original):  # type: ignore[no-untyped-def]
     fixture will ultimately be updated to the new approach.
     """
     yield admin_client_original
-
-
-@pytest.fixture()
-def test_user_client(api_client, test_user):  # type: ignore[no-untyped-def]
-    api_client.force_authenticate(test_user)
-    return api_client
 
 
 @pytest.fixture()
@@ -388,13 +375,9 @@ def project(organisation):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def segment(project: Project):  # type: ignore[no-untyped-def]
-    _segment = Segment.objects.create(name="segment", project=project)
-    # Deep clone the segment to ensure that any bugs around
-    # versioning get bubbled up through the test suite.
-    _segment.deep_clone()
-
-    return _segment
+def segment(project: Project) -> Segment:
+    segment: Segment = Segment.objects.create(name="segment", project=project)
+    return segment
 
 
 @pytest.fixture()
@@ -547,8 +530,8 @@ def multivariate_options(
 
 
 @pytest.fixture()
-def identity_matching_segment(project, trait):  # type: ignore[no-untyped-def]
-    segment = Segment.objects.create(name="Matching segment", project=project)
+def identity_matching_segment(project: Project, trait: Trait) -> Segment:
+    segment: Segment = Segment.objects.create(name="Matching segment", project=project)
     matching_rule = SegmentRule.objects.create(
         segment=segment, type=SegmentRule.ALL_RULE
     )
@@ -562,12 +545,12 @@ def identity_matching_segment(project, trait):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def api_client():  # type: ignore[no-untyped-def]
+def api_client() -> APIClient:
     return APIClient()
 
 
 @pytest.fixture()
-def feature(project: Project, environment: Environment) -> Feature:
+def feature(project: Project) -> Feature:
     return Feature.objects.create(name="Test Feature1", project=project)  # type: ignore[no-any-return]
 
 
@@ -801,27 +784,50 @@ def create_project_permission(db):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
+def create_environment_permission(db: None) -> PermissionModel:
+    return PermissionModel.objects.get(key=CREATE_ENVIRONMENT)
+
+
+@pytest.fixture()
 def manage_segment_overrides_permission(db: None) -> PermissionModel:
     return PermissionModel.objects.get(key=MANAGE_SEGMENT_OVERRIDES)
 
 
 @pytest.fixture()
-def user_environment_permission(test_user, environment):  # type: ignore[no-untyped-def]
+def delete_feature_permission(db: None) -> PermissionModel:
+    return PermissionModel.objects.get(key=DELETE_FEATURE)
+
+
+@pytest.fixture()
+def update_feature_state_permission(db: None) -> PermissionModel:
+    return PermissionModel.objects.get(key=UPDATE_FEATURE_STATE)
+
+
+@pytest.fixture()
+def user_environment_permission(
+    staff_user: FFAdminUser,
+    environment: Environment,
+) -> UserEnvironmentPermission:
     return UserEnvironmentPermission.objects.create(
-        user=test_user, environment=environment
+        user=staff_user, environment=environment
     )
 
 
 @pytest.fixture()
-def user_environment_permission_group(test_user, user_permission_group, environment):  # type: ignore[no-untyped-def]
+def user_environment_permission_group(
+    user_permission_group: UserPermissionGroup,
+    environment: Environment,
+) -> UserPermissionGroupEnvironmentPermission:
     return UserPermissionGroupEnvironmentPermission.objects.create(
         group=user_permission_group, environment=environment
     )
 
 
 @pytest.fixture()
-def user_project_permission(test_user, project):  # type: ignore[no-untyped-def]
-    return UserProjectPermission.objects.create(user=test_user, project=project)
+def user_project_permission(
+    staff_user: FFAdminUser, project: Project
+) -> UserProjectPermission:
+    return UserProjectPermission.objects.create(user=staff_user, project=project)
 
 
 @pytest.fixture()
@@ -1264,3 +1270,39 @@ def set_github_webhook_secret() -> None:
     from django.conf import settings
 
     settings.GITHUB_WEBHOOK_SECRET = "secret-key"
+
+
+@pytest.fixture()
+def enable_features(
+    mocker: MockerFixture,
+) -> EnableFeaturesFixture:
+    """
+    This fixture returns a callable that allows us to enable any Flagsmith feature flag(s) in tests.
+
+    Relevant issue for improving this: https://github.com/Flagsmith/flagsmith-python-client/issues/135
+    """
+
+    def _enable_features(*expected_feature_names: str) -> None:
+        def _is_feature_enabled(feature_name: str) -> bool:
+            return feature_name in expected_feature_names
+
+        mock_flags = mocker.MagicMock(spec=Flags)
+        mock_flags.is_feature_enabled.side_effect = _is_feature_enabled
+        mock_flagsmith = mocker.MagicMock(spec=Flagsmith)
+        mock_flagsmith.get_identity_flags.return_value = mock_flags
+        mock_flagsmith.get_environment_flags.return_value = mock_flags
+        mock_clients = mocker.MagicMock(spec=dict)
+        mock_clients.__getitem__.return_value = mock_flagsmith
+
+        mocker.patch(
+            "integrations.flagsmith.client._flagsmith_clients",
+            new=mock_clients,
+        )
+
+    return _enable_features
+
+
+@pytest.fixture(autouse=True)
+def clear_content_type_cache() -> typing.Generator[None, None, None]:
+    yield
+    ContentType.objects.clear_cache()

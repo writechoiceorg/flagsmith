@@ -16,7 +16,7 @@ developers are on the same NodeJS version.
 
 | Location                                                                | Suggested Version |
 | ----------------------------------------------------------------------- | :---------------: |
-| <a href="https://nodejs.org/en/">NodeJS</a>                             |     >= 16.0.0     |
+| <a href="https://nodejs.org/en/">NodeJS</a>                             |     >= 22.0.0     |
 | <a href="https://nodejs.org/en/">npm</a>                                |     >= 8.0.0      |
 | <a href="https://github.com/nvm-sh/nvm#installing-and-updating">nvm</a> |     >= 0.39.0     |
 | <a href="https://github.com/nvm-sh/nvm#zsh">nvm zshrc setup</a>         |        n/a        |
@@ -81,17 +81,15 @@ Current variables used between 'frontend/environment.js' and 'frontend/common/pr
 - `GOOGLE_ANALYTICS_API_KEY`: Google Analytics key to track API usage.
 - `CRISP_WEBSITE_ID`: Crisp Chat widget Website key.
 - `FIRST_PROMOTER_ID`: First Promoter ID for checkout affiliates.
-- `ALLOW_SIGNUPS`: **DEPRECATED in favour of PREVENT_SIGNUP** Determines whether to prevent manual signups without
+- `ALLOW_SIGNUPS`: **DEPRECATED** in favour of `PREVENT_SIGNUP` in the API. Determines whether to prevent manual signups without
   invites. Set it to any value to allow signups.
-- `PREVENT_SIGNUP`: Determines whether to prevent manual signups without invites. Set it to any value to prevent
-  signups.
+- `PREVENT_SIGNUP`: **DEPRECATED** in favour of `PREVENT_SIGNUP` in the API. Determines whether to prevent manual signups. Set it to any value to prevent hide signup pages.
 - `PREVENT_FORGOT_PASSWORD`: Determines whether to prevent forgot password functionality, useful for LDAP/SAML. Set it
   to any value to prevent forgot password functionality.
 - `PREVENT_EMAIL_PASSWORD`: Disables email address signup, login and change email functionality.
 - `ENABLE_MAINTENANCE_MODE`: Puts the site into maintenance mode. Set it to any value to enable maintenance.
 - `AMPLITUDE_API_KEY`: The Amplitude key to use for behaviour tracking.
 - `REO_API_KEY`: The Reo key to use for behaviour tracking.
-- `MIXPANEL_API_KEY`: Mixpanel analytics key to use for behaviour tracking.
 - `SENTRY_API_KEY`: Sentry key for error reporting.
 - `ALBACROSS_CLIENT_ID`: Albacross client ID key for behaviour tracking.
 - `BASE_URL`: Used for specifying a base url path that's ignored during routing if serving from a subdirectory.

@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from collections import ChainMap
 
 import pyotp
@@ -574,20 +575,35 @@ def test_get_user_is_not_throttled(  # type: ignore[no-untyped-def]
         assert response.status_code == status.HTTP_200_OK
 
 
-def test_delete_token(test_user, auth_token):  # type: ignore[no-untyped-def]
+@pytest.mark.django_db
+def test_delete_token(api_client: APIClient, db: None) -> None:
     # Given
-    url = reverse("api-v1:custom_auth:delete-token")
-    client = APIClient(HTTP_AUTHORIZATION=f"Token {auth_token.key}")
+    register_url = reverse("api-v1:custom_auth:ffadminuser-list")
+    password = FFAdminUser.objects.make_random_password()
+    register_data = {
+        "first_name": "test",
+        "last_name": "user",
+        "email": f"user{uuid.uuid4()}@example.com",
+        "password": password,
+        "re_password": password,
+    }
+    response = api_client.post(
+        register_url, data=json.dumps(register_data), content_type="application/json"
+    )
+    auth_token = response.json()["key"]
+
+    delete_token_url = reverse("api-v1:custom_auth:delete-token")
+    client = APIClient(HTTP_AUTHORIZATION=f"Token {auth_token}")
 
     # When
-    response = client.delete(url)
+    response = client.delete(delete_token_url)
 
     # Then
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
-    # and - if we try to delete the token again(i.e: access anything that uses is_authenticated)
-    # we should will get 401
-    assert client.delete(url).status_code == status.HTTP_401_UNAUTHORIZED
+    # and - if we try to delete the token again (i.e: access anything that uses
+    # is_authenticated) we will get 401
+    assert client.delete(delete_token_url).status_code == status.HTTP_401_UNAUTHORIZED
 
 
 def test_register_with_sign_up_type(client, db, settings):  # type: ignore[no-untyped-def]
@@ -730,3 +746,33 @@ def test_marketing_consent_given_defaults_to_true(
     # Then
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["marketing_consent_given"] is True
+
+
+@pytest.mark.parametrize(
+    "invalid_email",
+    [
+        "invalid_email",
+        "12345",
+        "invalid@email@com.com",
+        "invalid_email.com",
+        "invalid_email@com",
+        "foo@..!.bar.",
+    ],
+)
+def test_create_user_returns_error_if_email_is_invalid(
+    staff_client: APIClient,
+    invalid_email: str,
+) -> None:
+    # Given
+    url = reverse("api-v1:custom_auth:custom-mfa-authtoken-login")
+    register_data = {
+        "email": invalid_email,
+        "password": "password",
+    }
+
+    # When
+    response = staff_client.post(url, data=register_data)
+
+    # Then
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json()["email"][0] == "Invalid email format."
